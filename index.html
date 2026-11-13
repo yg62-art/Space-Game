@@ -2,7 +2,8 @@
 <html lang="ar">
 <head>
     <meta charset="UTF-8">
-    <title>حرب النيازك</title>
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>حرب النيازك - موبايل</title>
     <style>
         body {
             margin: 0;
@@ -16,17 +17,18 @@
             font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
             overflow: hidden;
             user-select: none;
+            -webkit-user-select: none;
         }
         .hud {
             display: flex;
             justify-content: space-between;
             align-items: center;
-            width: 400px;
-            margin-bottom: 10px;
-            font-size: 16px;
+            width: 360px;
+            margin-bottom: 8px;
+            font-size: 15px;
             font-weight: bold;
             background: rgba(255, 255, 255, 0.05);
-            padding: 8px 12px;
+            padding: 6px 10px;
             border-radius: 8px;
             box-sizing: border-box;
             border: 1px solid rgba(0, 242, 254, 0.2);
@@ -35,20 +37,48 @@
             background: radial-gradient(circle at center, #1b2735 0%, #090a0f 100%);
             border: 2px solid #00f2fe;
             border-radius: 10px;
-            box-shadow: 0 0 25px rgba(0, 242, 254, 0.3);
-            cursor: pointer;
-        }
-        .controls-hint {
-            margin-top: 10px;
-            font-size: 14px;
-            color: #8892b0;
-            text-align: center;
+            box-shadow: 0 0 20px rgba(0, 242, 254, 0.3);
+            touch-action: none;
         }
         #weaponStatus {
             margin-top: 5px;
-            font-size: 14px;
+            font-size: 13px;
             font-weight: bold;
             color: #ff4d6d;
+        }
+        /* أزرار التحكم للموبايل */
+        .mobile-controls {
+            display: flex;
+            justify-content: space-between;
+            width: 360px;
+            margin-top: 12px;
+        }
+        .control-btn {
+            background: rgba(0, 242, 254, 0.15);
+            border: 2px solid #00f2fe;
+            color: #fff;
+            font-size: 24px;
+            font-weight: bold;
+            width: 120px;
+            height: 55px;
+            border-radius: 12px;
+            outline: none;
+            cursor: pointer;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            transition: background 0.1s;
+        }
+        .control-btn:active, .control-btn.active {
+            background: rgba(0, 242, 254, 0.4);
+        }
+        .action-btn {
+            background: rgba(255, 77, 109, 0.15);
+            border: 2px solid #ff4d6d;
+            color: #ff4d6d;
+        }
+        .action-btn:active {
+            background: rgba(255, 77, 109, 0.4);
         }
     </style>
 </head>
@@ -61,9 +91,15 @@
         <span>الأعلى: <span id="highScore" style="color: #ffd700;">0</span></span>
     </div>
     
-    <canvas id="gameCanvas" width="400" height="550"></canvas>
+    <canvas id="gameCanvas" width="360" height="480"></canvas>
     <div id="weaponStatus">🔒 السلاح مغلق (يُفتح في المستوى 2)</div>
-    <div class="controls-hint">الأسهم ⬅️ ➡️ للحركة | مسطرة (Space) لإطلاق النار</div>
+
+    <!-- أزرار التحكم الظاهرة على شاشة التليفون -->
+    <div class="mobile-controls">
+        <button class="control-btn" id="leftBtn">⬅️</button>
+        <button class="control-btn action-btn" id="shootBtn" style="display:none;">🔥 إطلاق</button>
+        <button class="control-btn" id="rightBtn">➡️</button>
+    </div>
 
     <script>
         const canvas = document.getElementById("gameCanvas");
@@ -73,6 +109,7 @@
         const livesEl = document.getElementById("lives");
         const highScoreEl = document.getElementById("highScore");
         const weaponStatusEl = document.getElementById("weaponStatus");
+        const shootBtn = document.getElementById("shootBtn");
 
         let highScore = Number(localStorage.getItem("spaceHighScore")) || 0;
         highScoreEl.innerText = highScore;
@@ -180,11 +217,11 @@
         }
 
         const player = {
-            x: 180,
-            y: 480,
+            x: 160,
+            y: 410,
             width: 40,
             height: 45,
-            speed: 7
+            speed: 6
         };
 
         let meteors = [];
@@ -192,7 +229,7 @@
         let stars = [];
         let lastShotTime = 0;
 
-        for (let i = 0; i < 60; i++) {
+        for (let i = 0; i < 50; i++) {
             stars.push({
                 x: Math.random() * canvas.width,
                 y: Math.random() * canvas.height,
@@ -212,6 +249,26 @@
         }
 
         canvas.addEventListener("click", startGame);
+
+        // ربط أزرار الموبايل باللمس والماوس
+        const leftBtn = document.getElementById("leftBtn");
+        const rightBtn = document.getElementById("rightBtn");
+
+        function setupButton(btn, keyName) {
+            btn.addEventListener("touchstart", (e) => { e.preventDefault(); keys[keyName] = true; startGame(); });
+            btn.addEventListener("touchend", (e) => { e.preventDefault(); keys[keyName] = false; });
+            btn.addEventListener("mousedown", () => { keys[keyName] = true; startGame(); });
+            btn.addEventListener("mouseup", () => { keys[keyName] = false; });
+            btn.addEventListener("mouseleave", () => { keys[keyName] = false; });
+        }
+
+        setupButton(leftBtn, "ArrowLeft");
+        setupButton(rightBtn, "ArrowRight");
+
+        shootBtn.addEventListener("touchstart", (e) => { e.preventDefault(); keys["Space"] = true; });
+        shootBtn.addEventListener("touchend", (e) => { e.preventDefault(); keys["Space"] = false; });
+        shootBtn.addEventListener("mousedown", () => { keys["Space"] = true; });
+        shootBtn.addEventListener("mouseup", () => { keys["Space"] = false; });
 
         window.addEventListener("keydown", (e) => {
             if (e.code === "Space") e.preventDefault();
@@ -241,8 +298,9 @@
                 playSound("levelup");
 
                 if (level >= 2) {
-                    weaponStatusEl.innerText = "🔥 السلاح مُفعّل! اضغط Space للإطلاق";
+                    weaponStatusEl.innerText = "🔥 السلاح مُفعّل!";
                     weaponStatusEl.style.color = "#4ecca3";
+                    shootBtn.style.display = "flex"; // إظهار زر إطلاق النار للموبايل
                 }
             }
         }
@@ -264,21 +322,19 @@
         }
 
         function spawnMeteor() {
-            const radius = Math.random() * 15 + 15;
+            const radius = Math.random() * 12 + 12;
             meteors.push({
                 x: Math.random() * (canvas.width - radius * 2) + radius,
                 y: -radius,
                 radius: radius,
-                speed: Math.random() * 1.5 + 2.5 + (level * 0.6),
+                speed: Math.random() * 1.5 + 2.2 + (level * 0.5),
                 angle: 0,
                 spin: (Math.random() - 0.5) * 0.1
             });
         }
 
         function drawShip() {
-            if (invulnerableTimer > 0 && Math.floor(invulnerableTimer / 5) % 2 === 0) {
-                return;
-            }
+            if (invulnerableTimer > 0 && Math.floor(invulnerableTimer / 5) % 2 === 0) return;
 
             ctx.save();
             ctx.translate(player.x + player.width / 2, player.y + player.height / 2);
@@ -468,13 +524,13 @@
             if (levelUpBannerTimer > 0) {
                 ctx.save();
                 ctx.fillStyle = "rgba(78, 204, 163, 0.9)";
-                ctx.font = "bold 28px Arial";
+                ctx.font = "bold 24px Arial";
                 ctx.textAlign = "center";
                 ctx.fillText("LEVEL " + level + "!", canvas.width / 2, canvas.height / 2 - 20);
                 if (level === 2) {
                     ctx.fillStyle = "#ffbe0b";
-                    ctx.font = "bold 18px Arial";
-                    ctx.fillText("تم تفعيل المدفع الليزري!", canvas.width / 2, canvas.height / 2 + 15);
+                    ctx.font = "bold 16px Arial";
+                    ctx.fillText("تم تفعيل زر الإطلاق بالأسفل!", canvas.width / 2, canvas.height / 2 + 15);
                 }
                 ctx.restore();
             }
@@ -483,9 +539,9 @@
                 ctx.fillStyle = "rgba(0, 0, 0, 0.65)";
                 ctx.fillRect(0, 0, canvas.width, canvas.height);
                 ctx.fillStyle = "#00f2fe";
-                ctx.font = "bold 22px Arial";
+                ctx.font = "bold 18px Arial";
                 ctx.textAlign = "center";
-                ctx.fillText("اضغط هنا أو أي سهم لبدء اللعب", canvas.width / 2, canvas.height / 2);
+                ctx.fillText("اضغط هنا أو على الأزرار للبدء", canvas.width / 2, canvas.height / 2);
             }
         }
 
