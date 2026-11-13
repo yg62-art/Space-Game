@@ -1,0 +1,501 @@
+<!DOCTYPE html>
+<html lang="ar">
+<head>
+    <meta charset="UTF-8">
+    <title>حرب النيازك</title>
+    <style>
+        body {
+            margin: 0;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            height: 100vh;
+            background-color: #090a0f;
+            color: #fff;
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            overflow: hidden;
+            user-select: none;
+        }
+        .hud {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            width: 400px;
+            margin-bottom: 10px;
+            font-size: 16px;
+            font-weight: bold;
+            background: rgba(255, 255, 255, 0.05);
+            padding: 8px 12px;
+            border-radius: 8px;
+            box-sizing: border-box;
+            border: 1px solid rgba(0, 242, 254, 0.2);
+        }
+        canvas {
+            background: radial-gradient(circle at center, #1b2735 0%, #090a0f 100%);
+            border: 2px solid #00f2fe;
+            border-radius: 10px;
+            box-shadow: 0 0 25px rgba(0, 242, 254, 0.3);
+            cursor: pointer;
+        }
+        .controls-hint {
+            margin-top: 10px;
+            font-size: 14px;
+            color: #8892b0;
+            text-align: center;
+        }
+        #weaponStatus {
+            margin-top: 5px;
+            font-size: 14px;
+            font-weight: bold;
+            color: #ff4d6d;
+        }
+    </style>
+</head>
+<body>
+
+    <div class="hud">
+        <span>النقاط: <span id="score" style="color: #00f2fe;">0</span></span>
+        <span>المستوى: <span id="level" style="color: #4ecca3;">1</span></span>
+        <span id="lives">❤️❤️❤️</span>
+        <span>الأعلى: <span id="highScore" style="color: #ffd700;">0</span></span>
+    </div>
+    
+    <canvas id="gameCanvas" width="400" height="550"></canvas>
+    <div id="weaponStatus">🔒 السلاح مغلق (يُفتح في المستوى 2)</div>
+    <div class="controls-hint">الأسهم ⬅️ ➡️ للحركة | مسطرة (Space) لإطلاق النار</div>
+
+    <script>
+        const canvas = document.getElementById("gameCanvas");
+        const ctx = canvas.getContext("2d");
+        const scoreEl = document.getElementById("score");
+        const levelEl = document.getElementById("level");
+        const livesEl = document.getElementById("lives");
+        const highScoreEl = document.getElementById("highScore");
+        const weaponStatusEl = document.getElementById("weaponStatus");
+
+        let highScore = Number(localStorage.getItem("spaceHighScore")) || 0;
+        highScoreEl.innerText = highScore;
+
+        let score = 0;
+        let level = 1;
+        let lives = 3;
+        let gameOver = false;
+        let gameStarted = false;
+        let frameCount = 0;
+        let invulnerableTimer = 0;
+        let levelUpBannerTimer = 0;
+
+        let audioCtx = null;
+        let bgmInterval = null;
+
+        function initAudio() {
+            try {
+                if (!audioCtx) {
+                    const AudioContext = window.AudioContext || window.webkitAudioContext;
+                    audioCtx = new AudioContext();
+                    startBgMusic();
+                }
+                if (audioCtx.state === 'suspended') {
+                    audioCtx.resume();
+                }
+            } catch (e) {}
+        }
+
+        function startBgMusic() {
+            const notes = [110, 130.81, 146.83, 164.81, 146.83, 130.81];
+            let step = 0;
+            bgmInterval = setInterval(() => {
+                if (gameOver || !gameStarted || !audioCtx) return;
+                try {
+                    const osc = audioCtx.createOscillator();
+                    const gain = audioCtx.createGain();
+                    osc.connect(gain);
+                    gain.connect(audioCtx.destination);
+                    osc.type = "triangle";
+                    osc.frequency.setValueAtTime(notes[step % notes.length], audioCtx.currentTime);
+                    gain.gain.setValueAtTime(0.03, audioCtx.currentTime);
+                    gain.gain.exponentialRampToValueAtTime(0.001, audioCtx.currentTime + 0.25);
+                    osc.start();
+                    osc.stop(audioCtx.currentTime + 0.25);
+                    step++;
+                } catch (e) {}
+            }, 300);
+        }
+
+        function playSound(type) {
+            if (!audioCtx) return;
+            try {
+                const osc = audioCtx.createOscillator();
+                const gain = audioCtx.createGain();
+                osc.connect(gain);
+                gain.connect(audioCtx.destination);
+
+                if (type === "point") {
+                    osc.type = "sine";
+                    osc.frequency.setValueAtTime(450, audioCtx.currentTime);
+                    osc.frequency.exponentialRampToValueAtTime(750, audioCtx.currentTime + 0.1);
+                    gain.gain.setValueAtTime(0.08, audioCtx.currentTime);
+                    gain.gain.exponentialRampToValueAtTime(0.01, audioCtx.currentTime + 0.1);
+                    osc.start();
+                    osc.stop(audioCtx.currentTime + 0.1);
+                } else if (type === "shoot") {
+                    osc.type = "square";
+                    osc.frequency.setValueAtTime(800, audioCtx.currentTime);
+                    osc.frequency.exponentialRampToValueAtTime(200, audioCtx.currentTime + 0.12);
+                    gain.gain.setValueAtTime(0.06, audioCtx.currentTime);
+                    gain.gain.exponentialRampToValueAtTime(0.01, audioCtx.currentTime + 0.12);
+                    osc.start();
+                    osc.stop(audioCtx.currentTime + 0.12);
+                } else if (type === "hit") {
+                    osc.type = "sawtooth";
+                    osc.frequency.setValueAtTime(180, audioCtx.currentTime);
+                    osc.frequency.exponentialRampToValueAtTime(60, audioCtx.currentTime + 0.25);
+                    gain.gain.setValueAtTime(0.2, audioCtx.currentTime);
+                    gain.gain.exponentialRampToValueAtTime(0.01, audioCtx.currentTime + 0.25);
+                    osc.start();
+                    osc.stop(audioCtx.currentTime + 0.25);
+                } else if (type === "levelup") {
+                    osc.type = "sine";
+                    osc.frequency.setValueAtTime(440, audioCtx.currentTime);
+                    osc.frequency.setValueAtTime(554, audioCtx.currentTime + 0.1);
+                    osc.frequency.setValueAtTime(659, audioCtx.currentTime + 0.2);
+                    osc.frequency.setValueAtTime(880, audioCtx.currentTime + 0.3);
+                    gain.gain.setValueAtTime(0.15, audioCtx.currentTime);
+                    gain.gain.exponentialRampToValueAtTime(0.01, audioCtx.currentTime + 0.45);
+                    osc.start();
+                    osc.stop(audioCtx.currentTime + 0.45);
+                } else if (type === "gameover") {
+                    osc.type = "sawtooth";
+                    osc.frequency.setValueAtTime(200, audioCtx.currentTime);
+                    osc.frequency.setValueAtTime(160, audioCtx.currentTime + 0.2);
+                    osc.frequency.setValueAtTime(120, audioCtx.currentTime + 0.4);
+                    osc.frequency.exponentialRampToValueAtTime(40, audioCtx.currentTime + 0.8);
+                    gain.gain.setValueAtTime(0.25, audioCtx.currentTime);
+                    gain.gain.exponentialRampToValueAtTime(0.01, audioCtx.currentTime + 0.8);
+                    osc.start();
+                    osc.stop(audioCtx.currentTime + 0.8);
+                }
+            } catch (e) {}
+        }
+
+        const player = {
+            x: 180,
+            y: 480,
+            width: 40,
+            height: 45,
+            speed: 7
+        };
+
+        let meteors = [];
+        let bullets = [];
+        let stars = [];
+        let lastShotTime = 0;
+
+        for (let i = 0; i < 60; i++) {
+            stars.push({
+                x: Math.random() * canvas.width,
+                y: Math.random() * canvas.height,
+                radius: Math.random() * 1.5,
+                speed: Math.random() * 2 + 0.5
+            });
+        }
+
+        const keys = {};
+
+        function startGame() {
+            initAudio();
+            if (!gameStarted) {
+                gameStarted = true;
+                gameLoop();
+            }
+        }
+
+        canvas.addEventListener("click", startGame);
+
+        window.addEventListener("keydown", (e) => {
+            if (e.code === "Space") e.preventDefault();
+            keys[e.code] = true;
+            keys[e.key] = true;
+            startGame();
+        });
+
+        window.addEventListener("keyup", (e) => {
+            keys[e.code] = false;
+            keys[e.key] = false;
+        });
+
+        function updateLivesUI() {
+            livesEl.innerText = "❤️".repeat(Math.max(0, lives));
+        }
+
+        function addScore(points) {
+            score += points;
+            scoreEl.innerText = score;
+
+            let newLevel = Math.floor(score / 10) + 1;
+            if (newLevel > level) {
+                level = newLevel;
+                levelEl.innerText = level;
+                levelUpBannerTimer = 90;
+                playSound("levelup");
+
+                if (level >= 2) {
+                    weaponStatusEl.innerText = "🔥 السلاح مُفعّل! اضغط Space للإطلاق";
+                    weaponStatusEl.style.color = "#4ecca3";
+                }
+            }
+        }
+
+        function shoot() {
+            if (level < 2) return;
+            const now = Date.now();
+            if (now - lastShotTime > 250) {
+                bullets.push({
+                    x: player.x + player.width / 2 - 2.5,
+                    y: player.y - 10,
+                    width: 5,
+                    height: 15,
+                    speed: 10
+                });
+                playSound("shoot");
+                lastShotTime = now;
+            }
+        }
+
+        function spawnMeteor() {
+            const radius = Math.random() * 15 + 15;
+            meteors.push({
+                x: Math.random() * (canvas.width - radius * 2) + radius,
+                y: -radius,
+                radius: radius,
+                speed: Math.random() * 1.5 + 2.5 + (level * 0.6),
+                angle: 0,
+                spin: (Math.random() - 0.5) * 0.1
+            });
+        }
+
+        function drawShip() {
+            if (invulnerableTimer > 0 && Math.floor(invulnerableTimer / 5) % 2 === 0) {
+                return;
+            }
+
+            ctx.save();
+            ctx.translate(player.x + player.width / 2, player.y + player.height / 2);
+
+            ctx.fillStyle = frameCount % 4 < 2 ? "#ff9f1c" : "#ff4d6d";
+            ctx.beginPath();
+            ctx.moveTo(-8, 18);
+            ctx.lineTo(0, 32 + Math.random() * 8);
+            ctx.lineTo(8, 18);
+            ctx.closePath();
+            ctx.fill();
+
+            ctx.fillStyle = level >= 2 ? "#4ecca3" : "#00f2fe";
+            ctx.beginPath();
+            ctx.moveTo(0, -22);
+            ctx.lineTo(20, 20);
+            ctx.lineTo(0, 12);
+            ctx.lineTo(-20, 20);
+            ctx.closePath();
+            ctx.fill();
+
+            if (level >= 2) {
+                ctx.fillStyle = "#ff4d6d";
+                ctx.fillRect(-14, -4, 4, 12);
+                ctx.fillRect(10, -4, 4, 12);
+            }
+
+            ctx.fillStyle = "#ffffff";
+            ctx.beginPath();
+            ctx.arc(0, -2, 5, 0, Math.PI * 2);
+            ctx.fill();
+
+            ctx.restore();
+        }
+
+        function drawMeteor(m) {
+            ctx.save();
+            ctx.translate(m.x, m.y);
+            ctx.rotate(m.angle);
+
+            ctx.fillStyle = "#8d99ae";
+            ctx.strokeStyle = "#ef233c";
+            ctx.lineWidth = 2;
+
+            ctx.beginPath();
+            const sides = 7;
+            for (let i = 0; i < sides; i++) {
+                const theta = (i / sides) * Math.PI * 2;
+                const r = m.radius * (i % 2 === 0 ? 1 : 0.85);
+                const px = Math.cos(theta) * r;
+                const py = Math.sin(theta) * r;
+                if (i === 0) ctx.moveTo(px, py);
+                else ctx.lineTo(px, py);
+            }
+            ctx.closePath();
+            ctx.fill();
+            ctx.stroke();
+
+            ctx.restore();
+        }
+
+        function drawBullets() {
+            ctx.save();
+            ctx.fillStyle = "#ffbe0b";
+            for (let i = 0; i < bullets.length; i++) {
+                let b = bullets[i];
+                ctx.fillRect(b.x, b.y, b.width, b.height);
+            }
+            ctx.restore();
+        }
+
+        function update() {
+            if (gameOver) return;
+            frameCount++;
+
+            if (invulnerableTimer > 0) invulnerableTimer--;
+            if (levelUpBannerTimer > 0) levelUpBannerTimer--;
+
+            for (let i = 0; i < stars.length; i++) {
+                let s = stars[i];
+                s.y += s.speed;
+                if (s.y > canvas.height) {
+                    s.y = 0;
+                    s.x = Math.random() * canvas.width;
+                }
+            }
+
+            if ((keys["ArrowLeft"] || keys["a"] || keys["A"]) && player.x > 0) {
+                player.x -= player.speed;
+            }
+            if ((keys["ArrowRight"] || keys["d"] || keys["D"]) && player.x + player.width < canvas.width) {
+                player.x += player.speed;
+            }
+            if (keys["Space"]) {
+                shoot();
+            }
+
+            for (let i = bullets.length - 1; i >= 0; i--) {
+                bullets[i].y -= bullets[i].speed;
+                if (bullets[i].y + bullets[i].height < 0) {
+                    bullets.splice(i, 1);
+                }
+            }
+
+            let spawnRate = Math.max(18, 48 - (level * 4));
+            if (frameCount % spawnRate === 0) {
+                spawnMeteor();
+            }
+
+            for (let i = meteors.length - 1; i >= 0; i--) {
+                let m = meteors[i];
+                if (!m) continue;
+
+                m.y += m.speed;
+                m.angle += m.spin;
+
+                let meteorDestroyed = false;
+
+                for (let j = bullets.length - 1; j >= 0; j--) {
+                    let b = bullets[j];
+                    if (!b) continue;
+                    let distBullet = Math.hypot((b.x + b.width / 2) - m.x, (b.y + b.height / 2) - m.y);
+                    if (distBullet < m.radius + 6) {
+                        bullets.splice(j, 1);
+                        meteors.splice(i, 1);
+                        addScore(1);
+                        playSound("hit");
+                        meteorDestroyed = true;
+                        break;
+                    }
+                }
+
+                if (meteorDestroyed) continue;
+
+                let shipCenterX = player.x + player.width / 2;
+                let shipCenterY = player.y + player.height / 2;
+                let dist = Math.hypot(shipCenterX - m.x, shipCenterY - m.y);
+
+                if (dist < m.radius + 14 && invulnerableTimer === 0) {
+                    meteors.splice(i, 1);
+                    lives--;
+                    updateLivesUI();
+
+                    if (lives <= 0) {
+                        gameOver = true;
+                        if (bgmInterval) clearInterval(bgmInterval);
+                        playSound("gameover");
+                        if (score > highScore) {
+                            localStorage.setItem("spaceHighScore", score);
+                        }
+                        setTimeout(() => {
+                            alert("انتهت اللعبة!\nوصلت للمستوى: " + level + "\nنقاطك: " + score);
+                            location.reload();
+                        }, 400);
+                    } else {
+                        invulnerableTimer = 90;
+                        playSound("hit");
+                    }
+                    continue;
+                }
+
+                if (m.y - m.radius > canvas.height) {
+                    meteors.splice(i, 1);
+                    addScore(1);
+                    playSound("point");
+                }
+            }
+        }
+
+        function draw() {
+            ctx.clearRect(0, 0, canvas.width, canvas.height);
+
+            ctx.fillStyle = "#ffffff";
+            for (let i = 0; i < stars.length; i++) {
+                let s = stars[i];
+                ctx.beginPath();
+                ctx.arc(s.x, s.y, s.radius, 0, Math.PI * 2);
+                ctx.fill();
+            }
+
+            drawBullets();
+            drawShip();
+            for (let i = 0; i < meteors.length; i++) {
+                drawMeteor(meteors[i]);
+            }
+
+            if (levelUpBannerTimer > 0) {
+                ctx.save();
+                ctx.fillStyle = "rgba(78, 204, 163, 0.9)";
+                ctx.font = "bold 28px Arial";
+                ctx.textAlign = "center";
+                ctx.fillText("LEVEL " + level + "!", canvas.width / 2, canvas.height / 2 - 20);
+                if (level === 2) {
+                    ctx.fillStyle = "#ffbe0b";
+                    ctx.font = "bold 18px Arial";
+                    ctx.fillText("تم تفعيل المدفع الليزري!", canvas.width / 2, canvas.height / 2 + 15);
+                }
+                ctx.restore();
+            }
+
+            if (!gameStarted) {
+                ctx.fillStyle = "rgba(0, 0, 0, 0.65)";
+                ctx.fillRect(0, 0, canvas.width, canvas.height);
+                ctx.fillStyle = "#00f2fe";
+                ctx.font = "bold 22px Arial";
+                ctx.textAlign = "center";
+                ctx.fillText("اضغط هنا أو أي سهم لبدء اللعب", canvas.width / 2, canvas.height / 2);
+            }
+        }
+
+        function gameLoop() {
+            update();
+            draw();
+            if (!gameOver) requestAnimationFrame(gameLoop);
+        }
+
+        draw();
+    </script>
+</body>
+</html>
